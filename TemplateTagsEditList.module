@@ -1,0 +1,240 @@
+<?php namespace ProcessWire;
+
+class TemplateTagsEditList extends WireData implements Module {
+
+	public static function getModuleInfo() {
+		return [
+			"title"		=>	__("Template Tags Edit in List", __FILE__),
+			"summary"	=>	__("Adds a 'manage tags' button the template list just like the fields list has", __FILE__),
+			"version"	=>	"0.0.1",
+			"autoload"	=>	true
+		];
+	}
+	
+	public function init() {
+		$this->addHookAfter("ProcessTemplate::execute", $this, "addManageButton");
+		$this->addHook("ProcessTemplate::executeTags", $this, "executeTags");
+	}
+	
+	public function addManageButton(HookEvent $event) {
+		
+		$button = $this->modules->get('InputfieldButton');
+		$button->id = 'tags_button';
+		$button->href = './tags/';
+		$button->icon = 'tags';
+		$button->value = $this->_('Manage Tags');
+		$buttonHTML = $button->render();
+
+		$event->return = preg_replace("#(<a class='InputfieldButtonLink'[^>]*>.*?</a>)#", '$1' . $buttonHTML, $event->return, 1);
+	}
+	
+	public function executeTags(HookEvent $event) {
+
+		/** @var WireInput $input */
+		$input = $this->wire('input'); 
+		/** @var Modules $modules */
+		$modules = $this->wire('modules');
+		/** @var Fields $fields */
+		$templates = $this->wire('templates');
+		/** @var Sanitizer $sanitizer*/
+		$sanitizer = $this->wire('sanitizer');
+		/** @var InputfieldForm $form */
+		$form = $modules->get('InputfieldForm');
+
+		$out = '';
+		$labels = $this->labels;
+		$headline = $this->_("Manage tags");
+		$this->headline($headline);
+		$this->breadcrumb('../', $this->_("Templates"));
+		
+		$tags = $this->getTags($templates);
+		$editTag = $input->get->name('edit_tag');
+		$saveTag = $input->post->name('save_tag');
+		
+		if($editTag) {
+			// edit which fields are assigned to tag
+			$this->breadcrumb('./', $headline);
+			$this->headline($this->_("Tags") . " - " . (isset($tags[$editTag]) ? $tags[$editTag] : $editTag));
+			
+			/** @var InputfieldName $f */
+			$f = $modules->get('InputfieldName');
+			$f->attr('name', 'rename_tag');
+			$f->attr('value', isset($tags[$editTag]) ? $tags[$editTag] : $editTag);
+			$f->collapsed = Inputfield::collapsedYes;
+			$f->addClass('InputfieldIsSecondary', 'wrapClass');
+			$f->icon = 'tag';
+			$form->add($f);
+
+			/** @var InputfieldCheckboxes $f */
+			$f = $modules->get('InputfieldCheckboxes');
+			$f->attr('name', 'tag_templates');
+			$f->label = $this->_('Select all templates that should have this tag');
+			$f->table = true;
+			$f->icon = 'cube';
+			$f->thead = $this->_("Name") . "|" .
+						$this->_("Label") . "|" . 
+						$this->_("File") . "|" .
+						$this->_("Tags");
+			$value = array();
+			foreach($templates as $template) {
+				if($template->flags & Template::flagSystem) continue;
+				$f->addOption($template->name, "**$template->name**|$template->label|{$template->file}|" . implode(', ', $this->getTags([$template])));
+				if($this->hasTag($template, $editTag)) $value[] = $template->name;
+			}
+			$f->attr('value', $value);
+			$form->add($f);
+			
+			
+			/** @var InputfieldHidden $f */
+			$f = $modules->get('InputfieldHidden');
+			$f->attr('name', 'save_tag');
+			$f->attr('value', $editTag); 
+			$form->appendMarkup = "<p class='detail'>" . wireIconMarkup('trash-o') . ' ' . 
+				$this->_('To delete this tag, remove all templates from it.') . "</p>";
+			$form->add($f);
+			
+		} else if($saveTag) {
+			// save tag
+			$tagTemplates = $sanitizer->names($input->post('tag_templates'));
+			$renameTag = $input->post->fieldName('rename_tag');
+			$isCollapsed = (int) $input->post('tag_collapsed');
+			$removeTag = '';
+			if($renameTag && $renameTag != $saveTag) {
+				$removeTag = $saveTag;	
+				$saveTag = $renameTag;
+			}
+			foreach($templates as $template) {
+				if($removeTag && $this->hasTag($template, $removeTag)) {
+					$this->removeTag($template, $removeTag);
+				}
+				if(in_array($template->name, $tagTemplates)) { 
+					// template should have the given tag
+					if($this->hasTag($template, $saveTag)) continue;
+					$this->addTag($template, $saveTag);
+					$this->message(sprintf($this->_('Added tag “%1$s” to template: %2$s'), $saveTag, $template->name), Notice::log);
+				} else if($this->hasTag($template, $saveTag)) {
+					// field should not have the given tag
+					$this->removeTag($template, $saveTag);
+					$this->message(sprintf($this->_('Removed tag “%1$s” from template: %2$s'), $saveTag, $template->name), Notice::log);
+				}
+				if($template->isChanged('tags')) $template->save();
+			}
+
+			$this->wire('session')->redirect('./'); 
+			return '';
+			
+		} else {
+			// list defined tags
+			$out .= "<p class='description'>" . 
+				$this->_('Tags enable you to create collections of templates for listing or searching.') . "</p>";
+			/** @var MarkupAdminDataTable $table */
+			$table = $modules->get('MarkupAdminDataTable');
+			$table->setSortable(false);
+			$table->setEncodeEntities(false);
+			$table->headerRow(array($labels['name'], $labels['fields']));
+			
+			foreach($tags as $key => $tag) {
+				$tagTemplates = $this->findByTag($templates, $tag, true);
+				$table->row(array(
+					$tag => "./?edit_tag=$tag",
+					implode(', ', $tagTemplates)
+				));
+				if($templates->get($tag)) {
+					$this->warning(sprintf($this->_('Warning: tag “%s” has the same name as a Template.'), $tag));
+				}
+			}
+			
+			if(count($tags)) $out .= $table->render();
+
+			$form->attr('method', 'get');
+			/** @var InputfieldName $f */
+			$f = $modules->get('InputfieldName');
+			$f->attr('name', 'edit_tag');
+			$f->label = $this->_('Add new tag');
+			$f->icon = 'tag';
+			$f->addClass('InputfieldIsSecondary', 'wrapClass');
+			$form->add($f);
+		}
+		
+		$f = $modules->get('InputfieldSubmit');
+		$form->add($f);
+		$out .= $form->render();
+	
+		$event->return = $out;
+
+	}
+	
+	protected function addTag($template, $tag) {
+		$tags = array_values($this->getTags([$template]));
+		$tags[] = $tag;
+		sort($tags);
+		$template->tags = implode(' ', $tags);
+	}
+	
+	protected function removeTag($template, $tag) {
+		$tags = array_filter($this->getTags([$template]), function($val) use($tag) {
+			return $val !== $tag;
+		});
+		$template->tags = implode(' ', $tags);
+	}
+	
+	protected function findByTag($templates, $tag) {
+		$tagsList = $this->getTags($templates, true);
+		if(!array_key_exists($tag, $tagsList)) return false;
+		return $tagsList[$tag];
+	}
+	
+	
+	protected function hasTag($template, $tag) {
+		return in_array($tag, $this->getTags([$template]));
+	}
+	
+	protected function getTags($templates, $getNames = false) {
+		
+		$tagList = array();
+		foreach($templates as $template) {
+			if($template->tags) {
+				$tplTags = explode(' ', $template->tags);
+				foreach($tplTags as $tag) {
+					if(!isset($tagList[$tag])) $tagList[$tag] = array();
+					$tagList[$tag][] = $template->name;
+				}
+			}
+		}
+		ksort($tagList);
+		
+		if($getNames === true) {
+			return $tagList;
+		}
+		
+		$tagsList = array();
+		foreach($tagList as $tag => $tplNames) {
+			$tagsList[$tag] = $tag;
+		}
+		
+		return $tagsList;
+	}
+
+		
+	public function ___headline($headline) {
+		$this->wire('processHeadline', $headline); 
+		return $this; 
+	}
+
+
+	public function ___breadcrumb($href, $label) {
+		$pos = strpos($label, '/'); 
+		if($pos !== false && strpos($href, '/') === false) {
+			// arguments got reversed, we'll work with it anyway...
+			if($pos === 0 || $label[0] == '.' || substr($label, -1) == '/') {
+				$_href = $href; 
+				$href = $label;
+				$label = $_href;
+			}
+		}
+		$this->wire('breadcrumbs')->add(new Breadcrumb($href, $label));
+		return $this;
+	}
+
+
+}

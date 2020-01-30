@@ -8,7 +8,7 @@ ProcessWire 3.x
 Alpha, barely tested
 
 ## Demo
-![Demo Screencast](https://bitpoet.github.io/img/TemplateTagsEditList.png)
+![Demo Screencast](https://bitpoet.github.io/img/TemplateTagsEditList.gif)
 
 ## License
 Mozilla Public License v2. See LICENSE for details.

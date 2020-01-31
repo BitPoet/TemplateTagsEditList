@@ -6,7 +6,7 @@ class TemplateTagsEditList extends WireData implements Module {
 		return [
 			"title"		=>	__("Template Tags Edit in List", __FILE__),
 			"summary"	=>	__("Adds a 'manage tags' button the template list just like the fields list has", __FILE__),
-			"version"	=>	"0.0.2",
+			"version"	=>	"0.0.3",
 			"autoload"	=>	"template=admin"
 		];
 	}
@@ -139,9 +139,6 @@ class TemplateTagsEditList extends WireData implements Module {
 					$tag => "./?edit_tag=$tag",
 					implode(', ', $tagTemplates)
 				));
-				if($templates->get($tag)) {
-					$this->warning(sprintf($this->_('Warning: tag “%s” has the same name as a Template.'), $tag));
-				}
 			}
 			
 			if(count($tags)) $out .= $table->render();

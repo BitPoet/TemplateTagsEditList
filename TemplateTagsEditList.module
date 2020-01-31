@@ -6,8 +6,8 @@ class TemplateTagsEditList extends WireData implements Module {
 		return [
 			"title"		=>	__("Template Tags Edit in List", __FILE__),
 			"summary"	=>	__("Adds a 'manage tags' button the template list just like the fields list has", __FILE__),
-			"version"	=>	"0.0.1",
-			"autoload"	=>	true
+			"version"	=>	"0.0.2",
+			"autoload"	=>	"template=admin"
 		];
 	}
 	

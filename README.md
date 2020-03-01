@@ -5,7 +5,7 @@ ProcessWire module adding list tag editing for templates like already exists for
 ProcessWire 3.x
 
 ## Status
-Alpha, barely tested
+Beta
 
 ## Demo
 ![Demo Screencast](https://bitpoet.github.io/img/TemplateTagsEditList.gif)
